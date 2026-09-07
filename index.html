@@ -159,16 +159,19 @@
       <!-- Backstage (revealed only once unlocked) -->
       <div class="panel-body" id="tab-backstage" role="tabpanel" hidden>
         <div class="panel-row">
-          <span class="panel-count">Chance of each option</span>
+          <span class="panel-count">Real chance of each option</span>
           <div class="panel-row-actions">
-            <button class="btn btn-ghost" id="equalize-btn" title="Give every option the same odds">Equalize</button>
+            <button class="btn btn-ghost" id="equalize-btn" title="Give every option the same chance">Equalize</button>
+            <button class="btn btn-ghost" id="match-board-btn"
+              title="Drop every override so the odds follow the slices again">Match board</button>
             <button class="btn btn-ghost btn-danger" id="lock-btn">Lock</button>
           </div>
         </div>
 
         <ul class="odds-list" id="odds-list"></ul>
-        <p class="field-hint">Set a percentage and the rest rebalance around it, keeping their
-          proportions. The Options tab shows the same thing as raw weights.</p>
+        <p class="field-hint">These are the <em>real</em> odds. The wheel keeps drawing its slices
+          from the weights in the Options tab, so changing a percentage here does not change what
+          the board looks like — each row says when the two have parted ways.</p>
 
         <h2 class="panel-heading">Rig the next spin</h2>
         <select id="rig-select" class="rig-select" aria-label="Force the next result"></select>

@@ -937,6 +937,22 @@ input[type="range"]::-moz-range-thumb {
   transition: width var(--transition);
 }
 
+.odds-board {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.odds-board.is-rigged {
+  color: #b5761a;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .odds-board.is-rigged {
+  color: #f5c842;
+}
+
 .rig-select {
   width: 100%;
   padding: 0.55rem 0.7rem;

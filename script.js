@@ -114,9 +114,22 @@
   let unlocked = false;       // backstage open for this tab
   let riggedIndex = null;     // forced winner for the next spin, one shot only
 
-  /* Weights may be fractional — the backstage sets them from percentages. */
+  /* Each option carries two numbers, and they are deliberately independent.
+
+     `weight` is what the board shows: it sets how wide the slice is drawn, and
+     it is visible in the Options tab. `odds` is what actually decides the
+     winner, and only the backstage can set it.
+
+     An option with no `odds` of its own falls back to its `weight`, so a wheel
+     nobody has tampered with is honest — the slices mean exactly what they
+     look like. Setting a percentage in the backstage breaks that link for that
+     option, and the board carries on looking the same as it did. */
+
   const weightOf = o => (Number.isFinite(o.weight) && o.weight > 0 ? o.weight : 1);
   const totalWeight = () => options.reduce((sum, o) => sum + weightOf(o), 0);
+
+  const oddsOf = o => (Number.isFinite(o.odds) && o.odds > 0 ? o.odds : weightOf(o));
+  const totalOdds = () => options.reduce((sum, o) => sum + oddsOf(o), 0);
 
   function load(key, fallback) {
     try {
@@ -216,21 +229,20 @@
       return forced;
     }
 
-    // Equal weights — the usual case. Draw the index directly so no floating
+    // Equal odds — the usual case. Draw the index directly so no floating
     // point is involved at all and no position can be favoured.
-    const firstWeight = weightOf(options[0]);
-    if (options.every(o => weightOf(o) === firstWeight)) {
+    const firstOdds = oddsOf(options[0]);
+    if (options.every(o => oddsOf(o) === firstOdds)) {
       return randomInt(options.length);
     }
 
-    // Weighted. Compare against running totals accumulated in the same order
-    // the slices are drawn, so the odds match the geometry exactly. The
-    // intervals are half-open — [prev, cum) — so a value can never fall into
-    // two slices at once, and none of them gets a boundary the others don't.
+    // Unequal. Compare against running totals accumulated in the same order as
+    // the options, over half-open intervals — [prev, cum) — so a value can
+    // never fall into two of them, and none gets a boundary the others don't.
     const cumulative = [];
     let acc = 0;
     for (const opt of options) {
-      acc += weightOf(opt);
+      acc += oddsOf(opt);
       cumulative.push(acc);
     }
 
@@ -595,7 +607,7 @@
       weight.max = '999';
       weight.step = '0.1';
       weight.value = String(round3(weightOf(opt)));
-      weight.title = 'Weight — higher means more likely';
+      weight.title = 'Weight — how wide this slice is drawn';
       weight.setAttribute('aria-label', `Weight for ${opt.label}`);
       weight.addEventListener('input', () => {
         const v = parseFloat(weight.value);
@@ -736,20 +748,38 @@
    */
   function setShare(i, pct) {
     const p = Math.min(0.99, Math.max(0.001, pct / 100));
-    const others = totalWeight() - weightOf(options[i]);
+
+    // Pin every option's odds to its current value first. Until now some may
+    // have been implicit (falling back to weight), and they must not drift as
+    // a side effect of editing a different row.
+    options.forEach(o => { o.odds = round3(oddsOf(o)); });
+
+    const others = totalOdds() - oddsOf(options[i]);
     if (others <= 0) return;                    // only one option: it is always 100%
-    options[i].weight = round3((p * others) / (1 - p));
+    options[i].odds = round3((p * others) / (1 - p));
     commitOptions();
   }
 
   /** Refresh percentages and bars in place, leaving `skip`'s input alone. */
   function updateOdds(skip) {
-    const total = totalWeight();
+    const odds = totalOdds();
+    const shown = totalWeight();
+
     oddsRefs.forEach((ref, i) => {
       if (!options[i]) return;
-      const pct = total > 0 ? (weightOf(options[i]) / total) * 100 : 0;
-      if (i !== skip) ref.input.value = pct.toFixed(1);
-      ref.bar.style.width = `${pct.toFixed(2)}%`;
+
+      const real = odds > 0 ? (oddsOf(options[i]) / odds) * 100 : 0;
+      const board = shown > 0 ? (weightOf(options[i]) / shown) * 100 : 0;
+
+      if (i !== skip) ref.input.value = real.toFixed(1);
+      ref.bar.style.width = `${real.toFixed(2)}%`;
+
+      // Flag the gap between what the wheel looks like and what it does.
+      const rigged = Math.abs(real - board) > 0.05;
+      ref.board.textContent = rigged
+        ? `board shows ${board.toFixed(1)}%`
+        : 'matches the board';
+      ref.board.classList.toggle('is-rigged', rigged);
     });
   }
 
@@ -766,7 +796,7 @@
       oddsList.appendChild(li);
     }
 
-    const total = totalWeight();
+    const odds = totalOdds();
 
     options.forEach((opt, i) => {
       const li = document.createElement('li');
@@ -783,7 +813,7 @@
       name.className = 'odds-name';
       name.textContent = opt.label;
 
-      const pct = total > 0 ? (weightOf(opt) / total) * 100 : 0;
+      const pct = odds > 0 ? (oddsOf(opt) / odds) * 100 : 0;
 
       const input = document.createElement('input');
       input.type = 'number';
@@ -798,7 +828,6 @@
         if (!Number.isFinite(v) || v <= 0) return;
         setShare(i, v);
         updateOdds(i);       // keep the field the user is typing in untouched
-        renderOptions();
       });
       input.addEventListener('blur', () => updateOdds(-1));
 
@@ -814,10 +843,15 @@
       fill.style.width = `${pct.toFixed(2)}%`;
       bar.appendChild(fill);
 
-      li.append(head, bar);
+      const board = document.createElement('span');
+      board.className = 'odds-board';
+
+      li.append(head, bar, board);
       oddsList.appendChild(li);
-      oddsRefs.push({ input, bar: fill });
+      oddsRefs.push({ input, bar: fill, board });
     });
+
+    updateOdds(-1);   // fills in the board-share captions
 
     syncRigSelect();
   }
@@ -1220,10 +1254,17 @@
     lockForm.addEventListener('submit', submitLock);
     $('lock-cancel').addEventListener('click', closeLock);
 
+    // Equal chances, whatever the board happens to look like.
     $('equalize-btn').addEventListener('click', () => {
-      options.forEach(o => { o.weight = 1; });
+      options.forEach(o => { o.odds = 1; });
       commitOptions();
-      renderOptions();
+      renderBackstage();
+    });
+
+    // Drop every override so the odds follow the slices again — honest wheel.
+    $('match-board-btn').addEventListener('click', () => {
+      options.forEach(o => { delete o.odds; });
+      commitOptions();
       renderBackstage();
     });
 

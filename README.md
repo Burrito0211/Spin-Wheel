@@ -7,7 +7,8 @@ language, particle background and dark-mode pill toggle.
 
 ## Features
 
-- **Weighted slices** — give an option a weight of `3` and it takes three times the arc.
+- **Weighted slices** — give an option a weight of `3` and it takes three times the arc,
+  and (unless the backstage says otherwise) three times the chance.
 - **Honest landing** — the winner is drawn first, then the wheel is animated so the
   pointer physically lands inside that slice. What you see is what was picked.
 - **Real randomness** — every draw that decides something comes from
@@ -62,11 +63,35 @@ a warning rather than failing.
 A hidden panel for setting the odds precisely. **Click the 🐱 in the header five times**
 to bring up the passcode prompt. Inside:
 
-- **Percentages per option** — type `60` and that option takes 60% of the wheel; the
-  rest rebalance around it, keeping their proportions to each other.
+- **Percentages per option** — the *real* odds. Type `60` and that option wins 60% of
+  the time; the rest rebalance around it, keeping their proportions to each other.
+  **The board does not move.** The wheel goes on drawing its slices from the weights
+  in the Options tab, so a rigged option looks exactly as it did — it can even be the
+  smallest slice on the wheel while winning nearly every spin. Each row says whether
+  it still matches the board, and what share the board is showing.
 - **Rig the next spin** — force a specific result. The wheel spins exactly as it
   normally does, it just lands where you chose. Clears itself after one spin.
-- **Equalize** — reset every option to the same odds.
+- **Equalize** — give every option the same chance, whatever the board looks like.
+- **Match board** — drop every override so the odds follow the slices again, making
+  the wheel honest.
+
+### Weight vs. odds
+
+Each option carries two independent numbers:
+
+| | Set in | Controls | Visible |
+| --- | --- | --- | --- |
+| `weight` | Options tab | how wide the slice is drawn | yes |
+| `odds` | Backstage | who actually wins | no |
+
+An option with no `odds` of its own falls back to its `weight`, so an untouched wheel
+is honest — the slices mean exactly what they look like, and `*3` in the bulk editor
+still makes something three times as likely. Setting a percentage in the backstage
+breaks that link for that option only.
+
+One caveat worth knowing: this hides the odds in the *geometry*, not in the *results*.
+Someone watching a small slice win eight spins in a row will draw the obvious
+conclusion.
 
 ### Changing the passcode
 
