@@ -19,6 +19,20 @@
     'Pizza', 'Fried rice', 'Dumplings', 'Salad'
   ].map(label => ({ label, weight: 1 }));
 
+  /* ── Backstage passcode ───────────────────────────────
+     `hash` is SHA-256 of SALT + your passcode, hex encoded. It is empty until
+     you set one: click the cat in the header five times, pick a passcode, and
+     the app hands you the exact line to paste back in here.
+
+     This gate is obscurity, not security — the page is static, so anyone
+     willing to read the source can see the weights regardless. It keeps the
+     controls out of the way of people using the wheel normally.
+     ─────────────────────────────────────────────────────── */
+  const BACKSTAGE = {
+    salt: 'spinwheel::backstage::v1',
+    hash: ''
+  };
+
   const DEFAULT_SETTINGS = {
     duration: 5,
     sound: true,
@@ -47,6 +61,14 @@
   let rotation = 0;           // radians
   let spinning = false;
   let pointerKick = 0;        // radians, decays each frame
+
+  let unlocked = false;       // backstage open for this tab
+  let riggedIndex = null;     // forced winner for the next spin, one shot only
+  let sessionHash = null;     // passcode set this session but not yet pasted into BACKSTAGE
+
+  /* Weights may be fractional — the backstage sets them from percentages. */
+  const weightOf = o => (Number.isFinite(o.weight) && o.weight > 0 ? o.weight : 1);
+  const totalWeight = () => options.reduce((sum, o) => sum + weightOf(o), 0);
 
   function load(key, fallback) {
     try {
@@ -91,6 +113,22 @@
   const resultValue = $('result-value');
   const fxCanvas = $('fx-canvas');
 
+  const brandMark = $('brand-mark');
+  const backstageTab = $('backstage-tab');
+  const oddsList = $('odds-list');
+  const rigSelect = $('rig-select');
+
+  const lockOverlay = $('lock-overlay');
+  const lockForm = $('lock-form');
+  const lockInput = $('lock-input');
+  const lockConfirm = $('lock-confirm');
+  const lockSubmit = $('lock-submit');
+  const lockTitle = $('lock-title');
+  const lockNote = $('lock-note');
+  const lockError = $('lock-error');
+  const hashOutput = $('hash-output');
+  const hashLine = $('hash-line');
+
   const presetList = $('preset-list');
   const presetEmpty = $('preset-empty');
   const historyList = $('history-list');
@@ -101,12 +139,12 @@
 
   function buildSegments() {
     segments = [];
-    const total = options.reduce((sum, o) => sum + Math.max(1, o.weight || 1), 0);
+    const total = totalWeight();
     if (!options.length || total <= 0) return;
 
     let angle = 0;
     options.forEach((opt, i) => {
-      const share = (Math.max(1, opt.weight || 1) / total) * TAU;
+      const share = (weightOf(opt) / total) * TAU;
       segments.push({
         index: i,
         start: angle,
@@ -127,12 +165,18 @@
     return segments.find(s => a >= s.start && a < s.end) || segments[segments.length - 1];
   }
 
-  /** Pick a winner honouring weights. */
+  /** Pick a winner honouring weights, unless the backstage has rigged this spin. */
   function pickWinner() {
-    const total = options.reduce((sum, o) => sum + Math.max(1, o.weight || 1), 0);
-    let roll = Math.random() * total;
+    if (riggedIndex !== null && options[riggedIndex]) {
+      const forced = riggedIndex;
+      riggedIndex = null;          // one shot
+      syncRigSelect();
+      return forced;
+    }
+
+    let roll = Math.random() * totalWeight();
     for (let i = 0; i < options.length; i++) {
-      roll -= Math.max(1, options[i].weight || 1);
+      roll -= weightOf(options[i]);
       if (roll <= 0) return i;
     }
     return options.length - 1;
@@ -488,15 +532,17 @@
       const weight = document.createElement('input');
       weight.type = 'number';
       weight.className = 'option-weight';
-      weight.min = '1';
-      weight.max = '99';
-      weight.value = String(opt.weight || 1);
+      weight.min = '0.1';
+      weight.max = '999';
+      weight.step = '0.1';
+      weight.value = String(round3(weightOf(opt)));
       weight.title = 'Weight — higher means more likely';
       weight.setAttribute('aria-label', `Weight for ${opt.label}`);
       weight.addEventListener('input', () => {
-        const v = parseInt(weight.value, 10);
-        options[i].weight = Number.isFinite(v) && v > 0 ? Math.min(99, v) : 1;
+        const v = parseFloat(weight.value);
+        options[i].weight = Number.isFinite(v) && v > 0 ? Math.min(999, v) : 1;
         commitOptions();
+        updateOdds(-1);
       });
 
       const remove = document.createElement('button');
@@ -520,12 +566,14 @@
     options.push({ label: trimmed, weight: 1 });
     commitOptions();
     renderOptions();
+    renderBackstage();
   }
 
   function removeOption(index) {
     options.splice(index, 1);
     commitOptions();
     renderOptions();
+    renderBackstage();
   }
 
   /* ── Presets ─────────────────────────────────────────── */
@@ -554,6 +602,7 @@
         options = structuredClone(preset.options);
         commitOptions();
         renderOptions();
+        renderBackstage();
         switchTab('options');
       });
 
@@ -605,6 +654,247 @@
     });
   }
 
+  /* ── Backstage ───────────────────────────────────────── */
+
+  const round3 = n => Math.round(n * 1000) / 1000;
+
+  /** SHA-256 needs a secure context: https, or localhost. Not file://. */
+  async function hashPasscode(passcode) {
+    const subtle = window.crypto && window.crypto.subtle;
+    if (!subtle) throw new Error('insecure-context');
+    const bytes = new TextEncoder().encode(BACKSTAGE.salt + passcode);
+    const digest = await subtle.digest('SHA-256', bytes);
+    return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function expectedHash() {
+    return BACKSTAGE.hash || sessionHash || '';
+  }
+
+  /* ── Odds editing ─────────────────────────────────────── */
+
+  let oddsRefs = [];
+
+  /**
+   * Give option `i` a `pct` share, keeping every other option's share in the
+   * same proportion to each other as before.
+   */
+  function setShare(i, pct) {
+    const p = Math.min(0.99, Math.max(0.001, pct / 100));
+    const others = totalWeight() - weightOf(options[i]);
+    if (others <= 0) return;                    // only one option: it is always 100%
+    options[i].weight = round3((p * others) / (1 - p));
+    commitOptions();
+  }
+
+  /** Refresh percentages and bars in place, leaving `skip`'s input alone. */
+  function updateOdds(skip) {
+    const total = totalWeight();
+    oddsRefs.forEach((ref, i) => {
+      if (!options[i]) return;
+      const pct = total > 0 ? (weightOf(options[i]) / total) * 100 : 0;
+      if (i !== skip) ref.input.value = pct.toFixed(1);
+      ref.bar.style.width = `${pct.toFixed(2)}%`;
+    });
+  }
+
+  function renderBackstage() {
+    if (!unlocked) return;
+
+    oddsRefs = [];
+    oddsList.innerHTML = '';
+
+    if (!options.length) {
+      const li = document.createElement('li');
+      li.className = 'option-empty';
+      li.textContent = 'Add options first — there is nothing to weight yet.';
+      oddsList.appendChild(li);
+    }
+
+    const total = totalWeight();
+
+    options.forEach((opt, i) => {
+      const li = document.createElement('li');
+      li.className = 'odds-row';
+
+      const head = document.createElement('div');
+      head.className = 'odds-head';
+
+      const swatch = document.createElement('span');
+      swatch.className = 'option-swatch';
+      swatch.style.background = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+
+      const name = document.createElement('span');
+      name.className = 'odds-name';
+      name.textContent = opt.label;
+
+      const pct = total > 0 ? (weightOf(opt) / total) * 100 : 0;
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'odds-pct';
+      input.min = '0.1';
+      input.max = '99';
+      input.step = '0.1';
+      input.value = pct.toFixed(1);
+      input.setAttribute('aria-label', `Chance of ${opt.label} in percent`);
+      input.addEventListener('input', () => {
+        const v = parseFloat(input.value);
+        if (!Number.isFinite(v) || v <= 0) return;
+        setShare(i, v);
+        updateOdds(i);       // keep the field the user is typing in untouched
+        renderOptions();
+      });
+      input.addEventListener('blur', () => updateOdds(-1));
+
+      const unit = document.createElement('span');
+      unit.className = 'odds-unit';
+      unit.textContent = '%';
+
+      head.append(swatch, name, input, unit);
+
+      const bar = document.createElement('div');
+      bar.className = 'odds-bar';
+      const fill = document.createElement('span');
+      fill.style.width = `${pct.toFixed(2)}%`;
+      bar.appendChild(fill);
+
+      li.append(head, bar);
+      oddsList.appendChild(li);
+      oddsRefs.push({ input, bar: fill });
+    });
+
+    syncRigSelect();
+  }
+
+  function syncRigSelect() {
+    if (!unlocked) return;
+
+    const current = riggedIndex;
+    rigSelect.innerHTML = '';
+
+    const off = document.createElement('option');
+    off.value = '';
+    off.textContent = 'Off — let the wheel decide';
+    rigSelect.appendChild(off);
+
+    options.forEach((opt, i) => {
+      const el = document.createElement('option');
+      el.value = String(i);
+      el.textContent = `Always land on “${opt.label}”`;
+      rigSelect.appendChild(el);
+    });
+
+    if (current !== null && options[current]) {
+      rigSelect.value = String(current);
+    } else {
+      riggedIndex = null;
+      rigSelect.value = '';
+    }
+    rigSelect.classList.toggle('is-armed', riggedIndex !== null);
+  }
+
+  function setUnlocked(open) {
+    unlocked = open;
+    backstageTab.hidden = !open;
+
+    try {
+      if (open) sessionStorage.setItem('spinwheel.backstage', 'open');
+      else sessionStorage.removeItem('spinwheel.backstage');
+    } catch { /* private mode */ }
+
+    if (open) {
+      renderBackstage();
+      switchTab('backstage');
+    } else {
+      riggedIndex = null;
+      switchTab('options');
+    }
+  }
+
+  /* ── Passcode modal ──────────────────────────────────── */
+
+  let lockMode = 'unlock';   // 'unlock' | 'setup' | 'change'
+
+  function openLock(mode) {
+    lockMode = mode || (expectedHash() ? 'unlock' : 'setup');
+
+    const setting = lockMode !== 'unlock';
+    lockTitle.textContent = setting ? 'Choose a passcode' : 'Backstage';
+    lockNote.textContent = setting
+      ? 'This is stored as a hash, never as plain text. The page is static, so treat it as a lock on the door, not a safe.'
+      : 'Enter the passcode to adjust the odds.';
+
+    lockInput.value = '';
+    lockInput.placeholder = setting ? 'New passcode' : 'Passcode';
+    lockConfirm.value = '';
+    lockConfirm.hidden = !setting;
+    lockSubmit.textContent = setting ? 'Set passcode' : 'Unlock';
+
+    lockError.hidden = true;
+    lockForm.hidden = false;
+    hashOutput.hidden = true;
+
+    lockOverlay.hidden = false;
+    lockInput.focus();
+  }
+
+  function closeLock() {
+    lockOverlay.hidden = true;
+    lockInput.value = '';
+    lockConfirm.value = '';
+  }
+
+  function showLockError(message) {
+    lockError.textContent = message;
+    lockError.hidden = false;
+  }
+
+  async function submitLock(event) {
+    event.preventDefault();
+    const passcode = lockInput.value;
+
+    if (!passcode) {
+      showLockError('Enter a passcode.');
+      return;
+    }
+
+    let digest;
+    try {
+      digest = await hashPasscode(passcode);
+    } catch {
+      showLockError('Passcode hashing needs https or localhost — it will not work over file://.');
+      return;
+    }
+
+    if (lockMode === 'unlock') {
+      if (digest !== expectedHash()) {
+        showLockError('That is not it.');
+        lockInput.value = '';
+        lockInput.focus();
+        return;
+      }
+      closeLock();
+      setUnlocked(true);
+      return;
+    }
+
+    // setup / change
+    if (passcode.length < 4) {
+      showLockError('Use at least 4 characters.');
+      return;
+    }
+    if (passcode !== lockConfirm.value) {
+      showLockError('The two entries do not match.');
+      return;
+    }
+
+    sessionHash = digest;
+    hashLine.textContent = `    hash: '${digest}'`;
+    lockForm.hidden = true;
+    hashOutput.hidden = false;
+  }
+
   /* ── Tabs ────────────────────────────────────────────── */
 
   function switchTab(name) {
@@ -613,7 +903,7 @@
       tab.classList.toggle('active', on);
       tab.setAttribute('aria-selected', String(on));
     });
-    ['options', 'settings', 'history'].forEach(id => {
+    ['options', 'settings', 'history', 'backstage'].forEach(id => {
       $(`tab-${id}`).hidden = id !== name;
     });
   }
@@ -740,11 +1030,14 @@
     window.addEventListener('resize', drawWheel);
     window.addEventListener('keydown', e => {
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
-      if (e.code === 'Space' && !typing && overlay.hidden) {
+      if (e.code === 'Space' && !typing && overlay.hidden && lockOverlay.hidden) {
         e.preventDefault();
         spin();
       }
-      if (e.key === 'Escape' && !overlay.hidden) closeOverlay();
+      if (e.key === 'Escape') {
+        if (!lockOverlay.hidden) closeLock();
+        else if (!overlay.hidden) closeOverlay();
+      }
     });
 
     // Options
@@ -762,6 +1055,7 @@
       }
       commitOptions();
       renderOptions();
+      renderBackstage();
     });
 
     $('clear-btn').addEventListener('click', () => {
@@ -769,6 +1063,7 @@
       options = [];
       commitOptions();
       renderOptions();
+      renderBackstage();
     });
 
     // Bulk edit
@@ -801,6 +1096,7 @@
         .filter(o => o.label);
       commitOptions();
       renderOptions();
+      renderBackstage();
       closeBulk();
     });
 
@@ -884,6 +1180,58 @@
     overlay.addEventListener('click', e => {
       if (e.target === overlay || e.target === fxCanvas) closeOverlay();
     });
+
+    // ── Backstage ──
+    // Five quick clicks on the cat. Nothing on the page advertises this.
+    let taps = [];
+    brandMark.addEventListener('click', () => {
+      const now = Date.now();
+      taps = taps.filter(t => now - t < 1500);
+      taps.push(now);
+      if (taps.length >= 5) {
+        taps = [];
+        if (unlocked) switchTab('backstage');
+        else openLock();
+      }
+    });
+
+    lockForm.addEventListener('submit', submitLock);
+    $('lock-cancel').addEventListener('click', closeLock);
+
+    $('hash-copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(hashLine.textContent.trim());
+        $('hash-copy').textContent = 'Copied';
+        setTimeout(() => { $('hash-copy').textContent = 'Copy'; }, 1500);
+      } catch {
+        // Clipboard blocked — the line is on screen to select by hand.
+        $('hash-copy').textContent = 'Select it above';
+      }
+    });
+
+    $('hash-done').addEventListener('click', () => {
+      closeLock();
+      setUnlocked(true);
+    });
+
+    $('equalize-btn').addEventListener('click', () => {
+      options.forEach(o => { o.weight = 1; });
+      commitOptions();
+      renderOptions();
+      renderBackstage();
+    });
+
+    rigSelect.addEventListener('change', () => {
+      riggedIndex = rigSelect.value === '' ? null : parseInt(rigSelect.value, 10);
+      rigSelect.classList.toggle('is-armed', riggedIndex !== null);
+    });
+
+    $('change-pass').addEventListener('click', () => openLock('change'));
+    $('lock-btn').addEventListener('click', () => setUnlocked(false));
+
+    let wasOpen = false;
+    try { wasOpen = sessionStorage.getItem('spinwheel.backstage') === 'open'; } catch { /* private mode */ }
+    if (wasOpen && expectedHash()) setUnlocked(true);
 
     initCanvasEffect();
   }

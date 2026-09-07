@@ -134,6 +134,9 @@ code {
 .brand-mark {
   font-size: 1.3rem;
   line-height: 1;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .brand-divider {
@@ -848,6 +851,207 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.72rem;
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+/* ── Backstage ──────────────────────────────────────────── */
+
+#backstage-tab {
+  color: var(--color-steel-blue);
+}
+
+.odds-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.odds-row {
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--color-bg);
+}
+
+.odds-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.odds-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odds-pct {
+  width: 62px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--color-white);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-navy);
+  text-align: right;
+  padding: 0.25rem 0.4rem;
+  -moz-appearance: textfield;
+}
+
+.odds-pct::-webkit-outer-spin-button,
+.odds-pct::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.odds-pct:focus {
+  outline: none;
+  border-color: var(--color-steel-blue);
+  box-shadow: 0 0 0 3px rgba(70, 130, 180, 0.15);
+}
+
+.odds-unit {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.odds-bar {
+  height: 5px;
+  margin-top: 0.5rem;
+  border-radius: 3px;
+  background: var(--color-light-blue);
+  overflow: hidden;
+}
+
+.odds-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-steel-blue);
+  transition: width var(--transition);
+}
+
+.rig-select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--color-bg);
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+.rig-select:focus {
+  outline: none;
+  border-color: var(--color-steel-blue);
+  box-shadow: 0 0 0 3px rgba(70, 130, 180, 0.15);
+}
+
+.rig-select.is-armed {
+  border-color: #e8a020;
+  color: #b5761a;
+  font-weight: 700;
+}
+
+[data-theme="dark"] .rig-select.is-armed {
+  color: #f5c842;
+}
+
+/* ── Passcode modal ─────────────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(12, 20, 32, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: overlay-in 0.25s ease;
+}
+
+.modal-card {
+  background: var(--color-white);
+  border-radius: 20px;
+  padding: 2rem;
+  width: min(92vw, 420px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-color);
+  animation: card-in 0.35s cubic-bezier(0.2, 1.1, 0.35, 1);
+}
+
+.modal-title {
+  font-size: 1.3rem;
+  color: var(--color-navy);
+  margin-bottom: 0.4rem;
+}
+
+.modal-note {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+.modal-card input[type="password"] {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--color-bg);
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--color-text-main);
+}
+
+.modal-card input[type="password"]:focus {
+  outline: none;
+  border-color: var(--color-steel-blue);
+  box-shadow: 0 0 0 3px rgba(70, 130, 180, 0.15);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.lock-error {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #d1414b;
+  margin-top: 0.2rem;
+}
+
+[data-theme="dark"] .lock-error {
+  color: #ef7a82;
+}
+
+.hash-output pre {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--border-color);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: var(--color-navy);
+  overflow-x: auto;
+  white-space: pre;
 }
 
 /* ── Result overlay ─────────────────────────────────────── */

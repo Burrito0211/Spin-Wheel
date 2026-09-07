@@ -23,8 +23,8 @@
   <canvas id="bg-canvas" aria-hidden="true"></canvas>
 
   <header class="app-header">
+    <span class="brand-mark" id="brand-mark" aria-hidden="true">🐱</span>
     <a class="brand" href="https://me.burr1to.org" title="Back to me.burr1to.org">
-      <span class="brand-mark">🐱</span>
       <span class="brand-text">Burrito</span>
     </a>
     <span class="brand-divider">/</span>
@@ -79,6 +79,8 @@
         <button class="panel-tab active" role="tab" data-tab="options" aria-selected="true">Options</button>
         <button class="panel-tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
         <button class="panel-tab" role="tab" data-tab="history" aria-selected="false">History</button>
+        <button class="panel-tab" role="tab" data-tab="backstage" id="backstage-tab" aria-selected="false"
+          hidden>Backstage</button>
       </nav>
 
       <!-- Options -->
@@ -153,6 +155,31 @@
         <ol class="history-list" id="history-list"></ol>
         <p class="field-hint" id="history-empty">No spins yet. The last 50 results show up here.</p>
       </div>
+
+      <!-- Backstage (revealed only once unlocked) -->
+      <div class="panel-body" id="tab-backstage" role="tabpanel" hidden>
+        <div class="panel-row">
+          <span class="panel-count">Chance of each option</span>
+          <div class="panel-row-actions">
+            <button class="btn btn-ghost" id="equalize-btn" title="Give every option the same odds">Equalize</button>
+          </div>
+        </div>
+
+        <ul class="odds-list" id="odds-list"></ul>
+        <p class="field-hint">Set a percentage and the rest rebalance around it, keeping their
+          proportions. The Options tab shows the same thing as raw weights.</p>
+
+        <h2 class="panel-heading">Rig the next spin</h2>
+        <select id="rig-select" class="rig-select" aria-label="Force the next result"></select>
+        <p class="field-hint">The wheel spins exactly as normal — it just lands where you chose.
+          Clears itself after one spin.</p>
+
+        <h2 class="panel-heading">Passcode</h2>
+        <div class="panel-row-actions">
+          <button class="btn btn-ghost" id="change-pass">Change passcode…</button>
+          <button class="btn btn-ghost btn-danger" id="lock-btn">Lock backstage</button>
+        </div>
+      </div>
     </aside>
   </main>
 
@@ -172,6 +199,34 @@
         <button class="btn btn-primary" id="result-again">Spin again</button>
         <button class="btn btn-ghost" id="result-remove">Remove &amp; spin</button>
         <button class="btn btn-ghost" id="result-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Passcode prompt -->
+  <div class="modal-overlay" id="lock-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+      <h2 class="modal-title" id="lock-title">Backstage</h2>
+      <p class="modal-note" id="lock-note"></p>
+
+      <form id="lock-form" autocomplete="off">
+        <input type="password" id="lock-input" placeholder="Passcode" autocomplete="new-password">
+        <input type="password" id="lock-confirm" placeholder="Confirm passcode" autocomplete="new-password" hidden>
+        <p class="lock-error" id="lock-error" hidden></p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" type="submit" id="lock-submit">Unlock</button>
+          <button class="btn btn-ghost" type="button" id="lock-cancel">Cancel</button>
+        </div>
+      </form>
+
+      <div class="hash-output" id="hash-output" hidden>
+        <p class="field-hint">Passcode set for this browser. To make it work everywhere, replace the
+          <code>hash</code> line near the top of <code>script.js</code> with this, then commit:</p>
+        <pre id="hash-line"></pre>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" id="hash-copy">Copy</button>
+          <button class="btn btn-primary" type="button" id="hash-done">Done</button>
+        </div>
       </div>
     </div>
   </div>

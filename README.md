@@ -19,6 +19,38 @@ language, particle background and dark-mode pill toggle.
 
 Everything lives in `localStorage`. There is no backend and nothing leaves the browser.
 
+## Backstage
+
+A hidden panel for setting the odds precisely. **Click the 🐱 in the header five times**
+to bring up the passcode prompt. Inside:
+
+- **Percentages per option** — type `60` and that option takes 60% of the wheel; the
+  rest rebalance around it, keeping their proportions to each other.
+- **Rig the next spin** — force a specific result. The wheel spins exactly as it
+  normally does, it just lands where you chose. Clears itself after one spin.
+- **Equalize** — reset every option to the same odds.
+
+### Setting the passcode
+
+There is no passcode until you set one. Click the cat five times, choose one, and the
+app hands you a line like:
+
+```js
+    hash: 'a1b2c3…'
+```
+
+Replace the empty `hash:` line in the `BACKSTAGE` block near the top of `script.js`
+with it and commit. Until you do, the passcode only works in that one browser session.
+The passcode itself is never stored or transmitted — only the SHA-256 of it.
+"Change passcode…" in the backstage generates a fresh line the same way.
+
+> **This is a lock on the door, not a safe.** The site is static, so the weights and
+> the code are visible to anyone who opens DevTools. It keeps the controls out of the
+> way of people using the wheel; it will not stop someone determined to look.
+
+Hashing uses WebCrypto, which browsers only expose over **https or localhost** — the
+backstage cannot unlock over `file://`. The wheel itself works fine there.
+
 ## Running it
 
 It's a static page — no build step, no dependencies.
@@ -27,7 +59,8 @@ It's a static page — no build step, no dependencies.
 npx serve .          # or any static file server
 ```
 
-Opening `index.html` over `file://` works too.
+Opening `index.html` over `file://` works for the wheel, but not for the backstage
+(see above).
 
 ## Deploying
 
