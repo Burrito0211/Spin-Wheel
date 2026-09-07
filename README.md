@@ -10,6 +10,9 @@ language, particle background and dark-mode pill toggle.
 - **Weighted slices** — give an option a weight of `3` and it takes three times the arc.
 - **Honest landing** — the winner is drawn first, then the wheel is animated so the
   pointer physically lands inside that slice. What you see is what was picked.
+- **Real randomness** — every draw that decides something comes from
+  `crypto.getRandomValues`, seeded by the OS entropy pool, not from `Math.random()`.
+  See below.
 - **Bulk edit** — paste a list, one option per line; append `*3` to weight a line.
 - **Saved wheels** — keep named option sets and reload them later.
 - **History** — the last 50 results, with timestamps.
@@ -18,6 +21,41 @@ language, particle background and dark-mode pill toggle.
 - Light/dark theme, keyboard `Space` to spin, responsive down to phone width.
 
 Everything lives in `localStorage`. There is no backend and nothing leaves the browser.
+
+## How the randomness works
+
+Anything that decides an outcome draws from `crypto.getRandomValues` — a generator
+seeded from the operating system's entropy pool, so its output is *unpredictable*,
+not merely well-distributed. `Math.random()` is a plain PRNG: statistically fine, but
+its future output is derivable from enough past output.
+
+Two helpers, both in `script.js`:
+
+- **`randomInt(n)`** — a uniform integer in `[0, n)`. 2³² is rarely a whole number of
+  `n`s, so taking `% n` across the full range would quietly hand the leftover tail to
+  the lowest indices. The final partial block is discarded and redrawn instead, which
+  makes every position exactly as likely as any other.
+- **`randomUnit()`** — a uniform float in `[0, 1)` built from 53 bits, the full
+  precision a double can hold.
+
+`pickWinner()` then takes one of two paths:
+
+- **Equal weights** (the usual case): `randomInt(options.length)`. No floating point
+  is involved at all.
+- **Weighted:** compare a `randomUnit()` draw against running totals accumulated in
+  the same order the slices are drawn, so the odds match the geometry. The intervals
+  are half-open — `[prev, cum)` — so no value falls into two slices and no slice gets
+  a boundary the others don't.
+
+The shuffle is Fisher–Yates drawing from `randomInt`, so every ordering is equally
+likely.
+
+`Math.random()` is still used for confetti, the background particles, how far into
+the winning slice the wheel stops, and how many turns it makes. None of those change
+what gets picked.
+
+If WebCrypto is somehow unavailable, the helpers fall back to `Math.random()` and log
+a warning rather than failing.
 
 ## Backstage
 

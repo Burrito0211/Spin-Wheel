@@ -50,6 +50,46 @@
   const POINTER_ANGLE = -Math.PI / 2;   // 12 o'clock
   const TAU = Math.PI * 2;
 
+  /* ── Randomness ──────────────────────────────────────────
+     Anything that decides an outcome draws from crypto.getRandomValues: a
+     generator seeded from the operating system's entropy pool, so its output
+     is unpredictable rather than merely well-distributed. Unlike crypto.subtle
+     it is available in every context, file:// included.
+
+     Math.random() is still used for confetti, the background particles, and
+     how far into the winning slice the wheel stops — none of which change
+     what gets picked.
+     ─────────────────────────────────────────────────────── */
+
+  const cryptoObj = (window.crypto && window.crypto.getRandomValues) ? window.crypto : null;
+  if (!cryptoObj) {
+    console.warn('[spin-wheel] WebCrypto unavailable — falling back to Math.random().');
+  }
+
+  /** Uniform integer in [0, n). Every value is exactly as likely as any other. */
+  function randomInt(n) {
+    if (n <= 1) return 0;
+    if (!cryptoObj) return Math.floor(Math.random() * n);
+
+    // 2^32 is rarely a whole number of n's. Taking `% n` over the whole range
+    // would hand the leftover tail to the lowest values, so the final partial
+    // block is discarded and redrawn instead.
+    const limit = Math.floor(0x100000000 / n) * n;
+    const buf = new Uint32Array(1);
+    do {
+      cryptoObj.getRandomValues(buf);
+    } while (buf[0] >= limit);
+    return buf[0] % n;
+  }
+
+  /** Uniform float in [0, 1), carrying the full 53 bits a double can hold. */
+  function randomUnit() {
+    if (!cryptoObj) return Math.random();
+    const buf = new Uint32Array(2);
+    cryptoObj.getRandomValues(buf);
+    return ((buf[0] >>> 5) * 67108864 + (buf[1] >>> 6)) / 9007199254740992;  // 2^26, 2^53
+  }
+
   /* ── State ───────────────────────────────────────────── */
 
   let options = load(STORE.options, DEFAULT_OPTIONS);
@@ -174,10 +214,27 @@
       return forced;
     }
 
-    let roll = Math.random() * totalWeight();
-    for (let i = 0; i < options.length; i++) {
-      roll -= weightOf(options[i]);
-      if (roll <= 0) return i;
+    // Equal weights — the usual case. Draw the index directly so no floating
+    // point is involved at all and no position can be favoured.
+    const firstWeight = weightOf(options[0]);
+    if (options.every(o => weightOf(o) === firstWeight)) {
+      return randomInt(options.length);
+    }
+
+    // Weighted. Compare against running totals accumulated in the same order
+    // the slices are drawn, so the odds match the geometry exactly. The
+    // intervals are half-open — [prev, cum) — so a value can never fall into
+    // two slices at once, and none of them gets a boundary the others don't.
+    const cumulative = [];
+    let acc = 0;
+    for (const opt of options) {
+      acc += weightOf(opt);
+      cumulative.push(acc);
+    }
+
+    const roll = randomUnit() * acc;
+    for (let i = 0; i < cumulative.length; i++) {
+      if (roll < cumulative[i]) return i;
     }
     return options.length - 1;
   }
@@ -1049,8 +1106,10 @@
     });
 
     $('shuffle-btn').addEventListener('click', () => {
+      // Fisher–Yates, drawing each index from the CSPRNG so every ordering is
+      // equally likely.
       for (let i = options.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = randomInt(i + 1);
         [options[i], options[j]] = [options[j], options[i]];
       }
       commitOptions();
