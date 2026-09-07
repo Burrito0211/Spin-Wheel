@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Spin Wheel — Burrito</title>
+  <meta name="description" content="A spin wheel that decides for you. Add your options, give them weights, and let the wheel pick.">
+  <meta name="author" content="Burrito">
+  <meta name="theme-color" content="#1a2a6c">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Burrito">
+  <meta property="og:title" content="Spin Wheel">
+  <meta property="og:description" content="A spin wheel that decides for you.">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎡</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+  <header class="app-header">
+    <a class="brand" href="https://me.burr1to.org" title="Back to me.burr1to.org">
+      <span class="brand-mark">🐱</span>
+      <span class="brand-text">Burrito</span>
+    </a>
+    <span class="brand-divider">/</span>
+    <span class="brand-page">Spin Wheel</span>
+
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+      <span class="theme-toggle-icons">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round">
+          <circle cx="12" cy="12" r="4.5" />
+          <path d="M12 1.5v2M12 20.5v2M22.5 12h-2M3.5 12h-2M19.4 4.6l-1.4 1.4M6 18l-1.4 1.4M19.4 19.4L18 18M6 6L4.6 4.6" />
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M21 13.2A9 9 0 1 1 10.8 3a7.2 7.2 0 0 0 10.2 10.2z" />
+        </svg>
+      </span>
+      <span class="theme-toggle-label">Dark</span>
+    </button>
+  </header>
+
+  <main class="app-container">
+
+    <!-- Wheel -->
+    <section class="wheel-stage" aria-label="Spin wheel">
+      <h1 class="section-title">Let the wheel decide</h1>
+
+      <div class="wheel-wrap">
+        <div class="wheel-pointer" id="wheel-pointer" aria-hidden="true">
+          <svg viewBox="0 0 40 52">
+            <path d="M20 50 L3 14 A19 19 0 0 1 37 14 Z" />
+          </svg>
+        </div>
+
+        <canvas id="wheel" role="img" aria-label="Wheel of options"></canvas>
+
+        <button id="spin-btn" class="spin-hub" aria-label="Spin the wheel">
+          <span class="spin-hub-label">SPIN</span>
+        </button>
+      </div>
+
+      <p class="wheel-hint">Click the hub or press <kbd>Space</kbd> to spin</p>
+
+      <div class="last-result" id="last-result" hidden>
+        <span class="last-result-label">Last result</span>
+        <strong class="last-result-value" id="last-result-value"></strong>
+      </div>
+    </section>
+
+    <!-- Panel -->
+    <aside class="panel" aria-label="Wheel controls">
+      <nav class="panel-tabs" role="tablist">
+        <button class="panel-tab active" role="tab" data-tab="options" aria-selected="true">Options</button>
+        <button class="panel-tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
+        <button class="panel-tab" role="tab" data-tab="history" aria-selected="false">History</button>
+      </nav>
+
+      <!-- Options -->
+      <div class="panel-body" id="tab-options" role="tabpanel">
+        <div class="panel-row">
+          <span class="panel-count"><strong id="option-count">0</strong> options</span>
+          <div class="panel-row-actions">
+            <button class="btn btn-ghost" id="bulk-toggle" title="Edit as plain text">Bulk edit</button>
+            <button class="btn btn-ghost" id="shuffle-btn" title="Shuffle the order">Shuffle</button>
+            <button class="btn btn-ghost btn-danger" id="clear-btn" title="Remove every option">Clear</button>
+          </div>
+        </div>
+
+        <ul class="option-list" id="option-list"></ul>
+
+        <div class="bulk-editor" id="bulk-editor" hidden>
+          <textarea id="bulk-text" rows="10" spellcheck="false"
+            placeholder="Ramen&#10;Sushi&#10;Hot pot *3"></textarea>
+          <div class="bulk-actions">
+            <button class="btn btn-primary" id="bulk-apply">Apply</button>
+            <button class="btn btn-ghost" id="bulk-cancel">Cancel</button>
+          </div>
+          <p class="field-hint">One option per line. Append <code>*3</code> to make an entry three times as likely.</p>
+        </div>
+
+        <form class="add-row" id="add-form">
+          <input type="text" id="add-input" placeholder="Add an option…" maxlength="60" autocomplete="off">
+          <button class="btn btn-primary" type="submit">Add</button>
+        </form>
+      </div>
+
+      <!-- Settings -->
+      <div class="panel-body" id="tab-settings" role="tabpanel" hidden>
+        <div class="field">
+          <label for="duration-input">Spin length <span class="field-value" id="duration-value">5.0s</span></label>
+          <input type="range" id="duration-input" min="2" max="12" step="0.5" value="5">
+        </div>
+
+        <div class="field">
+          <label class="switch">
+            <input type="checkbox" id="sound-input" checked>
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">Tick sound</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="confetti-input" checked>
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">Confetti on win</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="remove-input">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">Remove the winner after each spin</span>
+          </label>
+        </div>
+
+        <h2 class="panel-heading">Saved wheels</h2>
+        <form class="add-row" id="preset-form">
+          <input type="text" id="preset-name" placeholder="Name this wheel…" maxlength="40" autocomplete="off">
+          <button class="btn btn-primary" type="submit">Save</button>
+        </form>
+        <ul class="preset-list" id="preset-list"></ul>
+        <p class="field-hint" id="preset-empty">Nothing saved yet. Saving keeps the current options in this browser.</p>
+      </div>
+
+      <!-- History -->
+      <div class="panel-body" id="tab-history" role="tabpanel" hidden>
+        <div class="panel-row">
+          <span class="panel-count"><strong id="history-count">0</strong> spins</span>
+          <button class="btn btn-ghost btn-danger" id="history-clear">Clear</button>
+        </div>
+        <ol class="history-list" id="history-list"></ol>
+        <p class="field-hint" id="history-empty">No spins yet. The last 50 results show up here.</p>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="app-footer">
+    <span>Built by <a href="https://me.burr1to.org">Burrito</a></span>
+    <span class="dot">·</span>
+    <span>Everything stays in your browser</span>
+  </footer>
+
+  <!-- Winner overlay -->
+  <div class="result-overlay" id="result-overlay" hidden>
+    <canvas id="fx-canvas" aria-hidden="true"></canvas>
+    <div class="result-card" role="dialog" aria-modal="true" aria-labelledby="result-value">
+      <span class="result-eyebrow">The wheel says</span>
+      <strong class="result-value" id="result-value"></strong>
+      <div class="result-actions">
+        <button class="btn btn-primary" id="result-again">Spin again</button>
+        <button class="btn btn-ghost" id="result-remove">Remove &amp; spin</button>
+        <button class="btn btn-ghost" id="result-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
