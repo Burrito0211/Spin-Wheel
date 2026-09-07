@@ -572,32 +572,6 @@ code {
   outline: none;
 }
 
-.option-weight {
-  width: 46px;
-  flex-shrink: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--color-white);
-  font-family: inherit;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  text-align: center;
-  padding: 0.2rem 0;
-  -moz-appearance: textfield;
-}
-
-.option-weight::-webkit-outer-spin-button,
-.option-weight::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.option-weight:focus {
-  outline: none;
-  border-color: var(--color-steel-blue);
-  color: var(--color-navy);
-}
-
 .option-remove {
   flex-shrink: 0;
   width: 26px;

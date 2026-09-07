@@ -17,7 +17,7 @@
   const DEFAULT_OPTIONS = [
     'Ramen', 'Sushi', 'Hot pot', 'Burgers',
     'Pizza', 'Fried rice', 'Dumplings', 'Salad'
-  ].map(label => ({ label, weight: 1 }));
+  ].map(label => ({ label }));
 
   /* ── Backstage passcode ───────────────────────────────
      `hash` is SHA-256 of `salt` + the passcode, hex encoded. Leave it empty to
@@ -101,10 +101,27 @@
 
   /* ── State ───────────────────────────────────────────── */
 
-  let options = load(STORE.options, DEFAULT_OPTIONS);
+  /* Saves from before the board was fixed at equal slices carried a `weight`
+     that set both the slice width and the odds. Keep the probability it
+     expressed, drop the appearance it forced. */
+  function migrate(list) {
+    if (!Array.isArray(list)) return [];
+    return list.map(entry => {
+      const { weight, ...opt } = entry || {};
+      if (opt.odds === undefined && Number.isFinite(weight) && weight > 0 && weight !== 1) {
+        opt.odds = weight;
+      }
+      return opt;
+    }).filter(o => typeof o.label === 'string');
+  }
+
+  let options = migrate(load(STORE.options, DEFAULT_OPTIONS));
   let settings = Object.assign({}, DEFAULT_SETTINGS, load(STORE.settings, {}));
   let history = load(STORE.history, []);
-  let presets = load(STORE.presets, []);
+  let presets = load(STORE.presets, []).map(p => ({
+    name: p && p.name,
+    options: migrate(p && p.options)
+  })).filter(p => typeof p.name === 'string');
 
   let segments = [];          // {index, start, end, color, label}
   let rotation = 0;           // radians
@@ -114,22 +131,18 @@
   let unlocked = false;       // backstage open for this tab
   let riggedIndex = null;     // forced winner for the next spin, one shot only
 
-  /* Each option carries two numbers, and they are deliberately independent.
+  /* The board is always drawn as N identical slices. Nothing can make it look
+     lopsided, so it never hints that anything has been weighted at all.
 
-     `weight` is what the board shows: it sets how wide the slice is drawn, and
-     it is visible in the Options tab. `odds` is what actually decides the
-     winner, and only the backstage can set it.
+     `odds` is the only number that decides anything, it is set in the
+     backstage, and it is never shown on the wheel. An option without one is
+     simply as likely as any other. */
 
-     An option with no `odds` of its own falls back to its `weight`, so a wheel
-     nobody has tampered with is honest — the slices mean exactly what they
-     look like. Setting a percentage in the backstage breaks that link for that
-     option, and the board carries on looking the same as it did. */
-
-  const weightOf = o => (Number.isFinite(o.weight) && o.weight > 0 ? o.weight : 1);
-  const totalWeight = () => options.reduce((sum, o) => sum + weightOf(o), 0);
-
-  const oddsOf = o => (Number.isFinite(o.odds) && o.odds > 0 ? o.odds : weightOf(o));
+  const oddsOf = o => (Number.isFinite(o.odds) && o.odds > 0 ? o.odds : 1);
   const totalOdds = () => options.reduce((sum, o) => sum + oddsOf(o), 0);
+
+  /** Share of the wheel each slice is drawn at, as a percentage. */
+  const boardShare = () => (options.length ? 100 / options.length : 0);
 
   function load(key, fallback) {
     try {
@@ -194,20 +207,18 @@
 
   function buildSegments() {
     segments = [];
-    const total = totalWeight();
-    if (!options.length || total <= 0) return;
+    if (!options.length) return;
 
-    let angle = 0;
+    // Identical slices, always. The odds live elsewhere.
+    const share = TAU / options.length;
     options.forEach((opt, i) => {
-      const share = (weightOf(opt) / total) * TAU;
       segments.push({
         index: i,
-        start: angle,
-        end: angle + share,
+        start: i * share,
+        end: (i + 1) * share,
         color: SEGMENT_COLORS[i % SEGMENT_COLORS.length],
         label: opt.label
       });
-      angle += share;
     });
   }
 
@@ -600,22 +611,6 @@
         commitOptions();
       });
 
-      const weight = document.createElement('input');
-      weight.type = 'number';
-      weight.className = 'option-weight';
-      weight.min = '0.1';
-      weight.max = '999';
-      weight.step = '0.1';
-      weight.value = String(round3(weightOf(opt)));
-      weight.title = 'Weight — how wide this slice is drawn';
-      weight.setAttribute('aria-label', `Weight for ${opt.label}`);
-      weight.addEventListener('input', () => {
-        const v = parseFloat(weight.value);
-        options[i].weight = Number.isFinite(v) && v > 0 ? Math.min(999, v) : 1;
-        commitOptions();
-        updateOdds(-1);
-      });
-
       const remove = document.createElement('button');
       remove.className = 'option-remove';
       remove.type = 'button';
@@ -624,7 +619,7 @@
       remove.setAttribute('aria-label', `Remove ${opt.label}`);
       remove.addEventListener('click', () => removeOption(i));
 
-      li.append(swatch, name, weight, remove);
+      li.append(swatch, name, remove);
       optionList.appendChild(li);
     });
 
@@ -763,13 +758,12 @@
   /** Refresh percentages and bars in place, leaving `skip`'s input alone. */
   function updateOdds(skip) {
     const odds = totalOdds();
-    const shown = totalWeight();
+    const board = boardShare();
 
     oddsRefs.forEach((ref, i) => {
       if (!options[i]) return;
 
       const real = odds > 0 ? (oddsOf(options[i]) / odds) * 100 : 0;
-      const board = shown > 0 ? (weightOf(options[i]) / shown) * 100 : 0;
 
       if (i !== skip) ref.input.value = real.toFixed(1);
       ref.bar.style.width = `${real.toFixed(2)}%`;
@@ -1125,9 +1119,7 @@
     $('bulk-toggle').addEventListener('click', () => {
       const opening = bulkEditor.hidden;
       if (opening) {
-        bulkText.value = options
-          .map(o => (o.weight > 1 ? `${o.label} *${o.weight}` : o.label))
-          .join('\n');
+        bulkText.value = options.map(o => o.label).join('\n');
       }
       bulkEditor.hidden = !opening;
       optionList.hidden = opening;
@@ -1138,17 +1130,13 @@
     $('bulk-cancel').addEventListener('click', closeBulk);
 
     $('bulk-apply').addEventListener('click', () => {
+      // Labels only. Odds are the backstage's business, not something you can
+      // set from a tab anyone can open.
       options = bulkText.value
         .split('\n')
         .map(line => line.trim())
         .filter(Boolean)
-        .map(line => {
-          const match = line.match(/^(.*?)\s*\*\s*(\d{1,2})$/);
-          return match
-            ? { label: match[1].trim(), weight: Math.max(1, parseInt(match[2], 10)) }
-            : { label: line, weight: 1 };
-        })
-        .filter(o => o.label);
+        .map(label => ({ label }));
       commitOptions();
       renderOptions();
       renderBackstage();
@@ -1254,15 +1242,8 @@
     lockForm.addEventListener('submit', submitLock);
     $('lock-cancel').addEventListener('click', closeLock);
 
-    // Equal chances, whatever the board happens to look like.
+    // Drop every override, which leaves the wheel genuinely fair again.
     $('equalize-btn').addEventListener('click', () => {
-      options.forEach(o => { o.odds = 1; });
-      commitOptions();
-      renderBackstage();
-    });
-
-    // Drop every override so the odds follow the slices again — honest wheel.
-    $('match-board-btn').addEventListener('click', () => {
       options.forEach(o => { delete o.odds; });
       commitOptions();
       renderBackstage();

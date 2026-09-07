@@ -98,12 +98,12 @@
 
         <div class="bulk-editor" id="bulk-editor" hidden>
           <textarea id="bulk-text" rows="10" spellcheck="false"
-            placeholder="Ramen&#10;Sushi&#10;Hot pot *3"></textarea>
+            placeholder="Ramen&#10;Sushi&#10;Hot pot"></textarea>
           <div class="bulk-actions">
             <button class="btn btn-primary" id="bulk-apply">Apply</button>
             <button class="btn btn-ghost" id="bulk-cancel">Cancel</button>
           </div>
-          <p class="field-hint">One option per line. Append <code>*3</code> to make an entry three times as likely.</p>
+          <p class="field-hint">One option per line.</p>
         </div>
 
         <form class="add-row" id="add-form">
@@ -161,17 +161,16 @@
         <div class="panel-row">
           <span class="panel-count">Real chance of each option</span>
           <div class="panel-row-actions">
-            <button class="btn btn-ghost" id="equalize-btn" title="Give every option the same chance">Equalize</button>
-            <button class="btn btn-ghost" id="match-board-btn"
-              title="Drop every override so the odds follow the slices again">Match board</button>
+            <button class="btn btn-ghost" id="equalize-btn"
+              title="Drop every override and make the wheel genuinely fair">Equalize</button>
             <button class="btn btn-ghost btn-danger" id="lock-btn">Lock</button>
           </div>
         </div>
 
         <ul class="odds-list" id="odds-list"></ul>
-        <p class="field-hint">These are the <em>real</em> odds. The wheel keeps drawing its slices
-          from the weights in the Options tab, so changing a percentage here does not change what
-          the board looks like — each row says when the two have parted ways.</p>
+        <p class="field-hint">These are the <em>real</em> odds. The wheel is always drawn as equal
+          slices no matter what you set here, so nothing on the board ever gives it away — each row
+          says when it has parted ways with the even share.</p>
 
         <h2 class="panel-heading">Rig the next spin</h2>
         <select id="rig-select" class="rig-select" aria-label="Force the next result"></select>

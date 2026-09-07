@@ -7,14 +7,14 @@ language, particle background and dark-mode pill toggle.
 
 ## Features
 
-- **Weighted slices** — give an option a weight of `3` and it takes three times the arc,
-  and (unless the backstage says otherwise) three times the chance.
+- **A board that gives nothing away** — the wheel is always drawn as equal slices, so
+  it looks the same whether the odds are even or heavily rigged.
 - **Honest landing** — the winner is drawn first, then the wheel is animated so the
   pointer physically lands inside that slice. What you see is what was picked.
 - **Real randomness** — every draw that decides something comes from
   `crypto.getRandomValues`, seeded by the OS entropy pool, not from `Math.random()`.
   See below.
-- **Bulk edit** — paste a list, one option per line; append `*3` to weight a line.
+- **Bulk edit** — paste a list, one option per line.
 - **Saved wheels** — keep named option sets and reload them later.
 - **History** — the last 50 results, with timestamps.
 - **Tick sound** (WebAudio, pitch drops as the wheel slows), confetti, and an optional
@@ -41,12 +41,11 @@ Two helpers, both in `script.js`:
 
 `pickWinner()` then takes one of two paths:
 
-- **Equal weights** (the usual case): `randomInt(options.length)`. No floating point
+- **Equal odds** (the usual case): `randomInt(options.length)`. No floating point
   is involved at all.
-- **Weighted:** compare a `randomUnit()` draw against running totals accumulated in
-  the same order the slices are drawn, so the odds match the geometry. The intervals
-  are half-open — `[prev, cum)` — so no value falls into two slices and no slice gets
-  a boundary the others don't.
+- **Rigged:** compare a `randomUnit()` draw against running totals of the odds. The
+  intervals are half-open — `[prev, cum)` — so no value falls into two options and
+  none gets a boundary the others don't.
 
 The shuffle is Fisher–Yates drawing from `randomInt`, so every ordering is equally
 likely.
@@ -65,33 +64,25 @@ to bring up the passcode prompt. Inside:
 
 - **Percentages per option** — the *real* odds. Type `60` and that option wins 60% of
   the time; the rest rebalance around it, keeping their proportions to each other.
-  **The board does not move.** The wheel goes on drawing its slices from the weights
-  in the Options tab, so a rigged option looks exactly as it did — it can even be the
-  smallest slice on the wheel while winning nearly every spin. Each row says whether
-  it still matches the board, and what share the board is showing.
+  **The board never moves.** The wheel is always drawn as equal slices, so an option
+  rigged to 99% is still drawn exactly as wide as everything else. Each row shows the
+  even share it is hiding behind.
 - **Rig the next spin** — force a specific result. The wheel spins exactly as it
   normally does, it just lands where you chose. Clears itself after one spin.
-- **Equalize** — give every option the same chance, whatever the board looks like.
-- **Match board** — drop every override so the odds follow the slices again, making
-  the wheel honest.
+- **Equalize** — drop every override, leaving the wheel genuinely fair again.
 
-### Weight vs. odds
+### Where the odds live
 
-Each option carries two independent numbers:
+`odds` is the only number that decides anything. It is set in the backstage, stored
+per option, and never shown on the wheel or in the Options tab — which carries labels
+and nothing else. An option with no `odds` is simply as likely as any other, so an
+untouched wheel is honest.
 
-| | Set in | Controls | Visible |
-| --- | --- | --- | --- |
-| `weight` | Options tab | how wide the slice is drawn | yes |
-| `odds` | Backstage | who actually wins | no |
-
-An option with no `odds` of its own falls back to its `weight`, so an untouched wheel
-is honest — the slices mean exactly what they look like, and `*3` in the bulk editor
-still makes something three times as likely. Setting a percentage in the backstage
-breaks that link for that option only.
+The board is drawn as `360° ÷ number of options`, always. Nothing can make it
+lopsided, so it never hints that anything has been weighted.
 
 One caveat worth knowing: this hides the odds in the *geometry*, not in the *results*.
-Someone watching a small slice win eight spins in a row will draw the obvious
-conclusion.
+Someone watching one option win eight spins in a row will draw the obvious conclusion.
 
 ### Changing the passcode
 
@@ -110,7 +101,7 @@ crypto.subtle.digest('SHA-256', new TextEncoder().encode('spinwheel::backstage::
 Setting `hash` to an empty string disables the backstage entirely — the five-tap
 gesture then does nothing at all.
 
-> **This is a lock on the door, not a safe.** The site is static, so the weights and
+> **This is a lock on the door, not a safe.** The site is static, so the odds and
 > the code are visible to anyone who opens DevTools. The salt is public too, so a
 > short or guessable passcode could be brute-forced offline from the hash. It keeps
 > the controls out of the way of people using the wheel; it will not stop someone
