@@ -68,23 +68,28 @@ to bring up the passcode prompt. Inside:
   normally does, it just lands where you chose. Clears itself after one spin.
 - **Equalize** — reset every option to the same odds.
 
-### Setting the passcode
+### Changing the passcode
 
-There is no passcode until you set one. Click the cat five times, choose one, and the
-app hands you a line like:
+The passcode lives in the `BACKSTAGE` block near the top of `script.js`, as a SHA-256
+of `salt + passcode` — the passcode itself is never stored or transmitted. To rotate
+it, run this in the browser console on the page and paste the result over the existing
+`hash`:
 
 ```js
-    hash: 'a1b2c3…'
+const p = 'your new passcode';
+crypto.subtle.digest('SHA-256', new TextEncoder().encode('spinwheel::backstage::v1' + p))
+  .then(d => console.log([...new Uint8Array(d)]
+    .map(b => b.toString(16).padStart(2, '0')).join('')));
 ```
 
-Replace the empty `hash:` line in the `BACKSTAGE` block near the top of `script.js`
-with it and commit. Until you do, the passcode only works in that one browser session.
-The passcode itself is never stored or transmitted — only the SHA-256 of it.
-"Change passcode…" in the backstage generates a fresh line the same way.
+Setting `hash` to an empty string disables the backstage entirely — the five-tap
+gesture then does nothing at all.
 
 > **This is a lock on the door, not a safe.** The site is static, so the weights and
-> the code are visible to anyone who opens DevTools. It keeps the controls out of the
-> way of people using the wheel; it will not stop someone determined to look.
+> the code are visible to anyone who opens DevTools. The salt is public too, so a
+> short or guessable passcode could be brute-forced offline from the hash. It keeps
+> the controls out of the way of people using the wheel; it will not stop someone
+> determined to look.
 
 Hashing uses WebCrypto, which browsers only expose over **https or localhost** — the
 backstage cannot unlock over `file://`. The wheel itself works fine there.

@@ -1040,20 +1040,6 @@ input[type="range"]::-moz-range-thumb {
   color: #ef7a82;
 }
 
-.hash-output pre {
-  margin-top: 0.5rem;
-  padding: 0.75rem;
-  border-radius: 8px;
-  background: var(--color-bg);
-  border: 1px solid var(--border-color);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.72rem;
-  line-height: 1.6;
-  color: var(--color-navy);
-  overflow-x: auto;
-  white-space: pre;
-}
-
 /* ── Result overlay ─────────────────────────────────────── */
 
 .result-overlay {

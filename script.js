@@ -20,13 +20,22 @@
   ].map(label => ({ label, weight: 1 }));
 
   /* ── Backstage passcode ───────────────────────────────
-     `hash` is SHA-256 of SALT + your passcode, hex encoded. It is empty until
-     you set one: click the cat in the header five times, pick a passcode, and
-     the app hands you the exact line to paste back in here.
+     `hash` is SHA-256 of `salt` + the passcode, hex encoded. Leave it empty to
+     disable the backstage entirely — the five-tap gesture then does nothing.
+
+     To rotate the passcode, run this in the browser console on this page and
+     paste the result over the hash below:
+
+       const p = 'your new passcode';
+       crypto.subtle.digest('SHA-256', new TextEncoder().encode('spinwheel::backstage::v1' + p))
+         .then(d => console.log([...new Uint8Array(d)]
+           .map(b => b.toString(16).padStart(2, '0')).join('')));
 
      This gate is obscurity, not security — the page is static, so anyone
-     willing to read the source can see the weights regardless. It keeps the
-     controls out of the way of people using the wheel normally.
+     willing to read the source can see the weights regardless. The salt is
+     public too, so a short or guessable passcode could be brute-forced offline
+     from the hash. It keeps the controls out of the way of people using the
+     wheel normally, which is what it is for.
      ─────────────────────────────────────────────────────── */
   const BACKSTAGE = {
     salt: 'spinwheel::backstage::v1',
@@ -104,7 +113,6 @@
 
   let unlocked = false;       // backstage open for this tab
   let riggedIndex = null;     // forced winner for the next spin, one shot only
-  let sessionHash = null;     // passcode set this session but not yet pasted into BACKSTAGE
 
   /* Weights may be fractional — the backstage sets them from percentages. */
   const weightOf = o => (Number.isFinite(o.weight) && o.weight > 0 ? o.weight : 1);
@@ -161,13 +169,7 @@
   const lockOverlay = $('lock-overlay');
   const lockForm = $('lock-form');
   const lockInput = $('lock-input');
-  const lockConfirm = $('lock-confirm');
-  const lockSubmit = $('lock-submit');
-  const lockTitle = $('lock-title');
-  const lockNote = $('lock-note');
   const lockError = $('lock-error');
-  const hashOutput = $('hash-output');
-  const hashLine = $('hash-line');
 
   const presetList = $('preset-list');
   const presetEmpty = $('preset-empty');
@@ -724,10 +726,6 @@
     return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  function expectedHash() {
-    return BACKSTAGE.hash || sessionHash || '';
-  }
-
   /* ── Odds editing ─────────────────────────────────────── */
 
   let oddsRefs = [];
@@ -871,27 +869,9 @@
 
   /* ── Passcode modal ──────────────────────────────────── */
 
-  let lockMode = 'unlock';   // 'unlock' | 'setup' | 'change'
-
-  function openLock(mode) {
-    lockMode = mode || (expectedHash() ? 'unlock' : 'setup');
-
-    const setting = lockMode !== 'unlock';
-    lockTitle.textContent = setting ? 'Choose a passcode' : 'Backstage';
-    lockNote.textContent = setting
-      ? 'This is stored as a hash, never as plain text. The page is static, so treat it as a lock on the door, not a safe.'
-      : 'Enter the passcode to adjust the odds.';
-
+  function openLock() {
     lockInput.value = '';
-    lockInput.placeholder = setting ? 'New passcode' : 'Passcode';
-    lockConfirm.value = '';
-    lockConfirm.hidden = !setting;
-    lockSubmit.textContent = setting ? 'Set passcode' : 'Unlock';
-
     lockError.hidden = true;
-    lockForm.hidden = false;
-    hashOutput.hidden = true;
-
     lockOverlay.hidden = false;
     lockInput.focus();
   }
@@ -899,7 +879,6 @@
   function closeLock() {
     lockOverlay.hidden = true;
     lockInput.value = '';
-    lockConfirm.value = '';
   }
 
   function showLockError(message) {
@@ -924,32 +903,15 @@
       return;
     }
 
-    if (lockMode === 'unlock') {
-      if (digest !== expectedHash()) {
-        showLockError('That is not it.');
-        lockInput.value = '';
-        lockInput.focus();
-        return;
-      }
-      closeLock();
-      setUnlocked(true);
+    if (digest !== BACKSTAGE.hash) {
+      showLockError('That is not it.');
+      lockInput.value = '';
+      lockInput.focus();
       return;
     }
 
-    // setup / change
-    if (passcode.length < 4) {
-      showLockError('Use at least 4 characters.');
-      return;
-    }
-    if (passcode !== lockConfirm.value) {
-      showLockError('The two entries do not match.');
-      return;
-    }
-
-    sessionHash = digest;
-    hashLine.textContent = `    hash: '${digest}'`;
-    lockForm.hidden = true;
-    hashOutput.hidden = false;
+    closeLock();
+    setUnlocked(true);
   }
 
   /* ── Tabs ────────────────────────────────────────────── */
@@ -1249,6 +1211,7 @@
       taps.push(now);
       if (taps.length >= 5) {
         taps = [];
+        if (!BACKSTAGE.hash) return;      // no passcode configured: stay invisible
         if (unlocked) switchTab('backstage');
         else openLock();
       }
@@ -1256,22 +1219,6 @@
 
     lockForm.addEventListener('submit', submitLock);
     $('lock-cancel').addEventListener('click', closeLock);
-
-    $('hash-copy').addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(hashLine.textContent.trim());
-        $('hash-copy').textContent = 'Copied';
-        setTimeout(() => { $('hash-copy').textContent = 'Copy'; }, 1500);
-      } catch {
-        // Clipboard blocked — the line is on screen to select by hand.
-        $('hash-copy').textContent = 'Select it above';
-      }
-    });
-
-    $('hash-done').addEventListener('click', () => {
-      closeLock();
-      setUnlocked(true);
-    });
 
     $('equalize-btn').addEventListener('click', () => {
       options.forEach(o => { o.weight = 1; });
@@ -1285,12 +1232,11 @@
       rigSelect.classList.toggle('is-armed', riggedIndex !== null);
     });
 
-    $('change-pass').addEventListener('click', () => openLock('change'));
     $('lock-btn').addEventListener('click', () => setUnlocked(false));
 
     let wasOpen = false;
     try { wasOpen = sessionStorage.getItem('spinwheel.backstage') === 'open'; } catch { /* private mode */ }
-    if (wasOpen && expectedHash()) setUnlocked(true);
+    if (wasOpen && BACKSTAGE.hash) setUnlocked(true);
 
     initCanvasEffect();
   }
