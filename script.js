@@ -30,7 +30,7 @@
      ─────────────────────────────────────────────────────── */
   const BACKSTAGE = {
     salt: 'spinwheel::backstage::v1',
-    hash: ''
+    hash: '0a37f1c4b2013ad85096c320edebf4cf9d8573a9102bf2ec0c3bbc906fa22437'
   };
 
   const DEFAULT_SETTINGS = {
