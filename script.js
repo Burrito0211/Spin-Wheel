@@ -191,6 +191,9 @@
   const backstageTab = $('backstage-tab');
   const oddsList = $('odds-list');
   const rigSelect = $('rig-select');
+  const oddsTotal = $('odds-total');
+  const lockBtn = $('lock-btn');
+  const fillBtn = $('fill-btn');
 
   const lockOverlay = $('lock-overlay');
   const lockForm = $('lock-form');
@@ -722,8 +725,6 @@
 
   /* ── Backstage ───────────────────────────────────────── */
 
-  const round3 = n => Math.round(n * 1000) / 1000;
-
   /** SHA-256 needs a secure context: https, or localhost. Not file://. */
   async function hashPasscode(passcode) {
     const subtle = window.crypto && window.crypto.subtle;
@@ -737,36 +738,112 @@
 
   let oddsRefs = [];
 
+  /* What the backstage fields hold, in percent, keyed by option object so a
+     shuffle keeps them. Each field is edited on its own — nothing else moves —
+     and the set only reaches `options` once it adds up to exactly 100. Until
+     then the wheel keeps spinning on the last complete set. */
+  let oddsDraft = new Map();
+  let oddsTouched = new Set();   // options typed into since the draft was built
+
   /**
-   * Give option `i` a `pct` share, keeping every other option's share in the
-   * same proportion to each other as before.
+   * Split `tenths` (a whole number of 0.1% steps) across `weights`, in
+   * proportion, so the parts add back up to exactly `tenths`.
    */
+  function splitTenths(weights, tenths) {
+    const sum = weights.reduce((a, b) => a + b, 0);
+    const exact = weights.map(w => (w / sum) * tenths);
+    const parts = exact.map(Math.floor);
+    let left = tenths - parts.reduce((a, b) => a + b, 0);
+    // Hand the leftover tenths to the largest remainders.
+    exact
+      .map((t, i) => ({ i, r: t - parts[i] }))
+      .sort((a, b) => b.r - a.r)
+      .forEach(({ i }) => { if (left > 0) { parts[i]++; left--; } });
+    return parts;
+  }
+
+  /** Current odds as percentages to one decimal that sum to exactly 100.0. */
+  function draftFromOdds() {
+    const parts = splitTenths(options.map(oddsOf), 1000);
+    oddsDraft = new Map(options.map((o, i) => [o, parts[i] / 10]));
+    oddsTouched = new Set();
+  }
+
+  const draftOf = o => oddsDraft.get(o) ?? 0;
+  const draftTotal = () => Math.round(options.reduce((s, o) => s + draftOf(o), 0) * 10) / 10;
+  // An option at 0 would fall back to default odds in oddsOf, so each needs a
+  // real share of its own.
+  const draftBalanced = () => !options.length
+    || (options.every(o => draftOf(o) > 0) && Math.abs(draftTotal() - 100) < 0.05);
+
+  /** Set option `i` to `pct` percent, touching nothing else. */
   function setShare(i, pct) {
-    const p = Math.min(0.99, Math.max(0.001, pct / 100));
+    oddsDraft.set(options[i], Math.round(pct * 10) / 10);
+    oddsTouched.add(options[i]);
+    commitDraft();
+  }
 
-    // Pin every option's odds to its current value first. Until now some may
-    // have been implicit (falling back to weight), and they must not drift as
-    // a side effect of editing a different row.
-    options.forEach(o => { o.odds = round3(oddsOf(o)); });
-
-    const others = totalOdds() - oddsOf(options[i]);
-    if (others <= 0) return;                    // only one option: it is always 100%
-    options[i].odds = round3((p * others) / (1 - p));
+  function commitDraft() {
+    if (!draftBalanced()) return;
+    options.forEach(o => { o.odds = draftOf(o); });
     commitOptions();
+  }
+
+  /** The options "Fill the rest" would share, and the tenths left for them. */
+  function fillPlan() {
+    const rest = options.filter(o => !oddsTouched.has(o));
+    const kept = options.reduce((s, o) => s + (oddsTouched.has(o) ? draftOf(o) : 0), 0);
+    return { rest, tenths: Math.round((100 - kept) * 10) };
+  }
+
+  /** Keep every hand-typed rate, split what is left of 100% evenly over the rest. */
+  function fillRest() {
+    const { rest, tenths } = fillPlan();
+    if (!rest.length || tenths < rest.length) return;
+    const parts = splitTenths(rest.map(() => 1), tenths);
+    rest.forEach((o, k) => oddsDraft.set(o, parts[k] / 10));
+    commitDraft();
+    updateOdds(-1);
+  }
+
+  /** Show the running total and hold the Lock button until it reads 100%. */
+  function updateOddsTotal() {
+    const total = draftTotal();
+    const ok = draftBalanced();
+    oddsTotal.hidden = !options.length;
+    oddsTotal.classList.toggle('is-off', !ok);
+    let fix;
+    if (ok) fix = 'saved';
+    else if (Math.abs(total - 100) >= 0.05) fix = `${total < 100 ? 'add' : 'remove'} ${Math.abs(100 - total).toFixed(1)}% before locking`;
+    else fix = 'every option needs at least 0.1% before locking';
+    oddsTotal.textContent = ok
+      ? `Total ${total.toFixed(1)}% — ${fix}`
+      : `Total ${total.toFixed(1)}% — ${fix}. The wheel still uses the last set that added up.`;
+    lockBtn.disabled = !ok;
+    lockBtn.title = ok ? '' : 'The chances must add up to 100% first';
+
+    const { rest, tenths } = fillPlan();
+    const canFill = oddsTouched.size > 0 && rest.length > 0 && tenths >= rest.length;
+    fillBtn.disabled = !canFill;
+    fillBtn.title = canFill
+      ? `Keep the rates you typed and split the remaining ${(tenths / 10).toFixed(1)}% evenly over the other ${rest.length}`
+      : !oddsTouched.size ? 'Type a rate for at least one option first'
+      : !rest.length ? 'Every option has been set by hand'
+      : 'The rates you typed leave nothing for the others';
   }
 
   /** Refresh percentages and bars in place, leaving `skip`'s input alone. */
   function updateOdds(skip) {
-    const odds = totalOdds();
     const board = boardShare();
 
     oddsRefs.forEach((ref, i) => {
       if (!options[i]) return;
 
-      const real = odds > 0 ? (oddsOf(options[i]) / odds) * 100 : 0;
+      const real = draftOf(options[i]);
 
       if (i !== skip) ref.input.value = real.toFixed(1);
-      ref.bar.style.width = `${real.toFixed(2)}%`;
+      ref.input.classList.toggle('is-set', oddsTouched.has(options[i]));
+      ref.bar.style.width = `${Math.min(100, real).toFixed(2)}%`;
 
       // Flag the gap between what the wheel looks like and what it does.
       const rigged = Math.abs(real - board) > 0.05;
@@ -775,6 +852,8 @@
         : 'matches the board';
       ref.board.classList.toggle('is-rigged', rigged);
     });
+
+    updateOddsTotal();
   }
 
   function renderBackstage() {
@@ -790,7 +869,11 @@
       oddsList.appendChild(li);
     }
 
-    const odds = totalOdds();
+    // Keep an in-progress set across a re-render (a shuffle, reopening the
+    // tab), but start over from the saved odds once the options themselves
+    // have changed.
+    const sameOptions = oddsDraft.size === options.length && options.every(o => oddsDraft.has(o));
+    if (!sameOptions) draftFromOdds();
 
     options.forEach((opt, i) => {
       const li = document.createElement('li');
@@ -807,20 +890,19 @@
       name.className = 'odds-name';
       name.textContent = opt.label;
 
-      const pct = odds > 0 ? (oddsOf(opt) / odds) * 100 : 0;
+      const pct = draftOf(opt);
 
       const input = document.createElement('input');
       input.type = 'number';
       input.className = 'odds-pct';
       input.min = '0.1';
-      input.max = '99';
+      input.max = '100';
       input.step = '0.1';
       input.value = pct.toFixed(1);
       input.setAttribute('aria-label', `Chance of ${opt.label} in percent`);
       input.addEventListener('input', () => {
         const v = parseFloat(input.value);
-        if (!Number.isFinite(v) || v <= 0) return;
-        setShare(i, v);
+        setShare(i, Number.isFinite(v) && v > 0 ? v : 0);
         updateOdds(i);       // keep the field the user is typing in untouched
       });
       input.addEventListener('blur', () => updateOdds(-1));
@@ -834,7 +916,7 @@
       const bar = document.createElement('div');
       bar.className = 'odds-bar';
       const fill = document.createElement('span');
-      fill.style.width = `${pct.toFixed(2)}%`;
+      fill.style.width = `${Math.min(100, pct).toFixed(2)}%`;
       bar.appendChild(fill);
 
       const board = document.createElement('span');
@@ -1245,6 +1327,7 @@
     // Drop every override, which leaves the wheel genuinely fair again.
     $('equalize-btn').addEventListener('click', () => {
       options.forEach(o => { delete o.odds; });
+      oddsDraft = new Map();
       commitOptions();
       renderBackstage();
     });
@@ -1254,7 +1337,11 @@
       rigSelect.classList.toggle('is-armed', riggedIndex !== null);
     });
 
-    $('lock-btn').addEventListener('click', () => setUnlocked(false));
+    fillBtn.addEventListener('click', fillRest);
+
+    lockBtn.addEventListener('click', () => {
+      if (draftBalanced()) setUnlocked(false);
+    });
 
     let wasOpen = false;
     try { wasOpen = sessionStorage.getItem('spinwheel.backstage') === 'open'; } catch { /* private mode */ }

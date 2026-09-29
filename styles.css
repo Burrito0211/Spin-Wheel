@@ -927,6 +927,31 @@ input[type="range"]::-moz-range-thumb {
   color: #f5c842;
 }
 
+.odds-pct.is-set {
+  border-color: var(--color-steel-blue);
+}
+
+#lock-btn:disabled,
+#fill-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.odds-total {
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.odds-total.is-off {
+  color: #d1414b;
+}
+
+[data-theme="dark"] .odds-total.is-off {
+  color: #ef7a82;
+}
+
 .rig-select {
   width: 100%;
   padding: 0.55rem 0.7rem;
