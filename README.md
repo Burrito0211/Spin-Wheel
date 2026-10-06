@@ -14,6 +14,12 @@ language, particle background and dark-mode pill toggle.
 - **Real randomness** — every draw that decides something comes from
   `crypto.getRandomValues`, seeded by the OS entropy pool, not from `Math.random()`.
   See below.
+- **Single and multiple spins** — "Spin once" (or the hub, or `Space`) draws one
+  result; "Spin ×N" draws up to 100 in one go. The wheel spins once and lands on
+  the last draw, and the result card lists every draw in the order it came up.
+  Multiple spins have their own "remove each option once it's picked" switch: on,
+  nothing repeats within the run and the picked options leave the wheel afterwards
+  (stopping early if the wheel runs out). A rigged spin decides only the first draw.
 - **Bulk edit** — paste a list, one option per line.
 - **Saved wheels** — keep named option sets and reload them later.
 - **History** — the last 50 results, with timestamps.

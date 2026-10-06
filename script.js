@@ -46,8 +46,12 @@
     duration: 5,
     sound: true,
     confetti: true,
-    removeWinner: false
+    removeWinner: false,
+    multiCount: 5,
+    multiRemove: false
   };
+
+  const MULTI_MAX = 100;
 
   /* Alternating dark/light blues so neighbouring slices stay legible. */
   const SEGMENT_COLORS = [
@@ -126,6 +130,7 @@
   let segments = [];          // {index, start, end, color, label}
   let rotation = 0;           // radians
   let spinning = false;
+  let lastRunCount = 1;       // how many draws "Spin again" should repeat
   let pointerKick = 0;        // radians, decays each frame
 
   let unlocked = false;       // backstage open for this tab
@@ -171,6 +176,11 @@
   const wctx = wheelCanvas.getContext('2d');
   const pointerEl = $('wheel-pointer');
   const spinBtn = $('spin-btn');
+  const onceBtn = $('once-btn');
+  const multiForm = $('multi-form');
+  const multiCount = $('multi-count');
+  const multiBtn = $('multi-btn');
+  const multiRemove = $('multi-remove');
 
   const optionList = $('option-list');
   const optionCount = $('option-count');
@@ -184,7 +194,10 @@
   const lastResultValue = $('last-result-value');
 
   const overlay = $('result-overlay');
+  const resultEyebrow = $('result-eyebrow');
   const resultValue = $('result-value');
+  const resultDraws = $('result-draws');
+  const resultRemove = $('result-remove');
   const fxCanvas = $('fx-canvas');
 
   const brandMark = $('brand-mark');
@@ -236,26 +249,34 @@
 
   /** Pick a winner honouring weights, unless the backstage has rigged this spin. */
   function pickWinner() {
-    if (riggedIndex !== null && options[riggedIndex]) {
-      const forced = riggedIndex;
-      riggedIndex = null;          // one shot
-      syncRigSelect();
-      return forced;
-    }
+    const forced = takeRigged();
+    return forced !== null ? forced : pickFrom(options);
+  }
 
+  /** The backstage's forced index, if one is armed. Clears it — one shot. */
+  function takeRigged() {
+    if (riggedIndex === null || !options[riggedIndex]) return null;
+    const forced = riggedIndex;
+    riggedIndex = null;
+    syncRigSelect();
+    return forced;
+  }
+
+  /** Draw an index from `list`, honouring each entry's odds. */
+  function pickFrom(list) {
     // Equal odds — the usual case. Draw the index directly so no floating
     // point is involved at all and no position can be favoured.
-    const firstOdds = oddsOf(options[0]);
-    if (options.every(o => oddsOf(o) === firstOdds)) {
-      return randomInt(options.length);
+    const firstOdds = oddsOf(list[0]);
+    if (list.every(o => oddsOf(o) === firstOdds)) {
+      return randomInt(list.length);
     }
 
     // Unequal. Compare against running totals accumulated in the same order as
-    // the options, over half-open intervals — [prev, cum) — so a value can
-    // never fall into two of them, and none gets a boundary the others don't.
+    // the list, over half-open intervals — [prev, cum) — so a value can never
+    // fall into two of them, and none gets a boundary the others don't.
     const cumulative = [];
     let acc = 0;
-    for (const opt of options) {
+    for (const opt of list) {
       acc += oddsOf(opt);
       cumulative.push(acc);
     }
@@ -264,7 +285,24 @@
     for (let i = 0; i < cumulative.length; i++) {
       if (roll < cumulative[i]) return i;
     }
-    return options.length - 1;
+    return list.length - 1;
+  }
+
+  /**
+   * Draw `n` results up front. With "remove each option once it's picked" on,
+   * each pick leaves the pool, so this draws without replacement and stops
+   * once it runs dry. A rigged spin only decides the first draw.
+   */
+  function pickMany(n) {
+    const pool = options.slice();
+    const picks = [];
+    for (let k = 0; k < n && pool.length; k++) {
+      const forced = k === 0 ? takeRigged() : null;
+      const i = forced !== null ? forced : pickFrom(pool);
+      picks.push(pool[i]);
+      if (settings.multiRemove) pool.splice(i, 1);
+    }
+    return picks;
   }
 
   /* ── Drawing ─────────────────────────────────────────── */
@@ -395,15 +433,41 @@
 
   function spin() {
     if (spinning || !segments.length) return;
+    lastRunCount = 1;
     if (segments.length === 1) {
       finish(0);
       return;
     }
+    animateTo(pickWinner(), finish);
+  }
 
+  /** Draw `n` results at once. The wheel spins once and lands on the last. */
+  function spinMany(n) {
+    if (spinning || !segments.length) return;
+    if (n <= 1) {
+      spin();
+      return;
+    }
+    lastRunCount = n;
+
+    const picks = pickMany(n);
+    const last = options.indexOf(picks[picks.length - 1]);
+    if (segments.length === 1) {
+      finishMany(picks);
+      return;
+    }
+    animateTo(last, () => finishMany(picks));
+  }
+
+  function setSpinControls(enabled) {
+    [spinBtn, onceBtn, multiBtn].forEach(btn => { btn.disabled = !enabled; });
+  }
+
+  /** Spin the wheel so the pointer comes to rest inside slice `winner`. */
+  function animateTo(winner, done) {
     spinning = true;
-    spinBtn.disabled = true;
+    setSpinControls(false);
 
-    const winner = pickWinner();
     const seg = segments[winner];
 
     // Land somewhere in the middle 80% of the slice so the pointer never
@@ -447,8 +511,8 @@
         applyPointerKick();
         drawWheel();
         spinning = false;
-        spinBtn.disabled = false;
-        finish(segmentAt(rotation).index);
+        setSpinControls(true);
+        done(segmentAt(rotation).index);
       }
     }
 
@@ -466,13 +530,67 @@
     lastResultValue.textContent = label;
     lastResult.hidden = false;
 
+    resultEyebrow.textContent = 'The wheel says';
     resultValue.textContent = label;
     resultValue.dataset.index = String(index);
+    resultDraws.hidden = true;
+    resultRemove.hidden = false;
+    showOverlay();
+
+    if (settings.removeWinner) removeOption(index);
+  }
+
+  function finishMany(picks) {
+    const labels = picks.map(o => o.label || '—');
+    const at = Date.now();
+
+    // Oldest first, so the last draw ends up on top like a run of single spins.
+    labels.forEach(label => history.unshift({ label, at }));
+    history = history.slice(0, 50);
+    save(STORE.history, history);
+    renderHistory();
+
+    lastResultValue.textContent = labels.join(' → ');
+    lastResult.hidden = false;
+
+    resultEyebrow.textContent = `${labels.length} spins, in order`;
+    resultValue.textContent = '';
+    delete resultValue.dataset.index;
+
+    resultDraws.innerHTML = '';
+    labels.forEach((label, i) => {
+      const li = document.createElement('li');
+      li.className = 'result-draw';
+
+      const rank = document.createElement('span');
+      rank.className = 'result-draw-rank';
+      rank.textContent = `${i + 1}`;
+
+      const name = document.createElement('span');
+      name.className = 'result-draw-name';
+      name.textContent = label;
+
+      li.append(rank, name);
+      resultDraws.appendChild(li);
+    });
+    resultDraws.hidden = false;
+    resultDraws.scrollTop = 0;
+
+    resultRemove.hidden = true;   // "remove the winner" has no single winner here
+    showOverlay();
+
+    if (settings.multiRemove) {
+      options = options.filter(o => !picks.includes(o));
+      commitOptions();
+      renderOptions();
+      renderBackstage();
+    }
+  }
+
+  function showOverlay() {
     overlay.hidden = false;
     $('result-again').focus();
-
     if (settings.confetti) launchConfetti();
-    if (settings.removeWinner) removeOption(index);
   }
 
   /* ── Sound ───────────────────────────────────────────── */
@@ -1155,6 +1273,41 @@
     drawWheel();
 
     spinBtn.addEventListener('click', spin);
+    onceBtn.addEventListener('click', spin);
+
+    // Multi-spin
+    const clampCount = v => Math.min(MULTI_MAX, Math.max(1, Math.round(v)));
+    const readCount = () => {
+      const v = parseFloat(multiCount.value);
+      return Number.isFinite(v) ? clampCount(v) : settings.multiCount;
+    };
+    settings.multiCount = clampCount(Number(settings.multiCount) || DEFAULT_SETTINGS.multiCount);
+    multiCount.max = String(MULTI_MAX);
+    multiCount.value = String(settings.multiCount);
+    multiBtn.textContent = `Spin ×${settings.multiCount}`;
+
+    multiCount.addEventListener('input', () => {
+      multiBtn.textContent = `Spin ×${readCount()}`;
+    });
+    multiCount.addEventListener('change', () => {
+      settings.multiCount = readCount();
+      multiCount.value = String(settings.multiCount);
+      multiBtn.textContent = `Spin ×${settings.multiCount}`;
+      save(STORE.settings, settings);
+    });
+    multiRemove.checked = settings.multiRemove;
+    multiRemove.addEventListener('change', () => {
+      settings.multiRemove = multiRemove.checked;
+      save(STORE.settings, settings);
+    });
+    multiForm.addEventListener('submit', e => {
+      e.preventDefault();
+      settings.multiCount = readCount();
+      multiCount.value = String(settings.multiCount);
+      save(STORE.settings, settings);
+      multiCount.blur();
+      spinMany(settings.multiCount);
+    });
 
     window.addEventListener('resize', drawWheel);
     window.addEventListener('keydown', e => {
@@ -1291,7 +1444,8 @@
 
     $('result-again').addEventListener('click', () => {
       closeOverlay();
-      setTimeout(spin, 120);
+      const n = lastRunCount;
+      setTimeout(() => (n > 1 ? spinMany(n) : spin()), 120);
     });
 
     $('result-remove').addEventListener('click', () => {
